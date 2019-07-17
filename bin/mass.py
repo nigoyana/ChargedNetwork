@@ -59,7 +59,7 @@ def trainModel():
     for number_of_layers in range(2, max_num_of_layers):
         for activation in activation_functions:
             for number_of_nodes in range(50, max_num_of_nodes, step_nodes):
-                model = MassModel(3, number_of_layers, number_of_nodes, activation, 0.4)
+                model = MassModel(dataTrain.shape[-1], 3, number_of_layers, number_of_nodes, activation, 0.4)
                 callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10)
                 model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001), loss='mean_squared_error', metrics=['mean_squared_error'])
                 training = model.fit(dataTrain, resultTrain, epochs=nEpoch, batch_size=25, callbacks=[callback], validation_split=0.1, verbose=2)

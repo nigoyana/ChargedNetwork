@@ -2,36 +2,20 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 class MassModel(tf.keras.Model):
-    def __init__(self, nClass, nLayer=3, nNodes=100, activation="relu", dropout=0.3):
+    def __init__(self, inputShape, nClass, nLayer=3, nNodes=100, activation="relu", dropout=0.3):
         self.nLayers = nLayer
+        self.nClass = nClass
         self.title = "l" + str(nLayer) + "_n" + str(nNodes) + "_" + str(activation) + "_mu_and_e"
 
-        super(MassModel, self).__init__(name="MassModel")
-        self.nClass = nClass
+        inputLayer = tf.keras.layers.Input(shape=(inputShape))
+        x = tf.keras.layers.Dense(nNodes, activation=activation)(inputLayer)
 
-        self.inputLayer = tf.keras.layers.Dense(nNodes, activation=activation)
-        #self.dropout1 = tf.keras.layers.Dropout(dropout)
-        self.layer = [0] * nLayer
-        for new_layer in range(self.nLayers - 1):
-            self.layer[new_layer] = tf.keras.layers.Dense(nNodes, activation=activation)
-        #self.layer1 = tf.keras.layers.Dense(nNodes, activation=activation)
-        #self.layer2 = tf.keras.layers.Dense(nNodes, activation=activation)
-        self.outputLayer = tf.keras.layers.Dense(1)
+        for n in range(nLayer-1):
+            x = tf.keras.layers.Dense(nNodes, activation=activation)(x)
 
-    def call(self, inputs):
-        ##Push input through all layers
-        x = self.inputLayer(inputs)
-        #x = self.dropout1(x)
-        for new_layer in range(self.nLayers - 1):
-            x = self.layer[new_layer](x)
-        #x = self.layer1(x)
-        #x = self.layer2(x)
-        return self.outputLayer(x)
+        outputLayer = tf.keras.layers.Dense(1)(x)
 
-    def compute_output_shape(self, inputShape):
-        shape = tf.TensorShape(inputShape).as_list()
-        shape[-1] = self.nClass
-        return tf.TensorShape(shape)
+        tf.keras.Model.__init__(self, inputs=inputLayer, outputs=outputLayer, name="MassModel")
 
     def plotTraining(self, training, signal, background, true):
         fig, ax = plt.subplots()	
