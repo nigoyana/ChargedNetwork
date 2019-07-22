@@ -9,19 +9,26 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import multiprocessing as mp
+import random
 
 def parser():
     parser = argparse.ArgumentParser(description='Program for predict charged Higgs mass', formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--train', action = "store_true", help="Train model on data")
-    parser.add_argument('--tune', action = "store_true", help="Tune the hyperparameters")
-    parser.add_argument('--parallel', action = "store_true", help="Parallelize the tunning")
+    parser.add_argument('--tune', action = "store_true", help="Tune the hyperparameters. It will be automatically parallelised (if possible)")
+    parser.add_argument('--rand', action = "store_true", help="Enable random tuning. It will be automatically parallelised (if possible)")
     return parser.parse_args()
 
-def trainModel(tuneFlag, parallelizeFlag):
-	data = []
-	result = []
+def labelData(data_files):
+	dictFiles = dict()
+	for file_name in data_files:
+		mass = int(file_name[-11:-8])
+		if mass in dictFiles:
+			dictFiles[mass].append(file_name)
+		else:
+			dictFiles[mass] = [file_name]	
+	return dictFiles
 
-	dataTest, resultTest = [], []
+def trainModel(tuneFlag, randFlag):
 
 	data_files = [
 			"data/massTraining/e4j/L4B_200_100.csv",
@@ -43,18 +50,13 @@ def trainModel(tuneFlag, parallelizeFlag):
 			"data/massTraining/mu4j/L4B_550_100.csv",
 			"data/massTraining/mu4j/L4B_600_100.csv"]
 
-	dictFiles = dict()
-
-	for file_name in data_files:
-		mass = int(file_name[-11:-8])
-		if mass in dictFiles:
-			dictFiles[mass].append(file_name)
-		else:
-			dictFiles[mass] = [file_name]
+	dictFiles = labelData(data_files)
 
     ##Read csv data to numpy
+	
 	dictMassInd = dict()
-	dataTest = []
+	data, result = [], []
+	dataTest, resultTest = [], []
 	for mass in dictFiles:
 		start_index = len(dataTest)
 		for file_name in dictFiles[mass]:
@@ -89,7 +91,6 @@ def trainModel(tuneFlag, parallelizeFlag):
 		min_nodes, max_nodes, step_nodes = 50, 200, 50
 		min_batch, max_batch, step_batch = 25, 100, 25
 		activation_functions = ["relu", "elu", "selu", "softplus"]
-		#activation_functions = ["relu", "elu"]
 		hyperParamsSet = []
 		for number_of_layers in range(min_layers, max_layers + 1):
 			for activation in activation_functions:
@@ -101,48 +102,55 @@ def trainModel(tuneFlag, parallelizeFlag):
 						newDict['nNodes'] = number_of_nodes
 						newDict['dropout'] = 0.3
 						newDict['batchSize'] = batchSize
-						newDict['nEpoch'] = 500
+						newDict['nEpoch'] = 1
 						hyperParamsSet.append(newDict)
 
-		##Check if the parallelising is required 
-		if (parallelizeFlag):
-			pool = mp.Pool(mp.cpu_count())
-			results = []
-			result_objects = []
-			for hyperParams in hyperParamsSet:
+		result_objects = []
+		cpu_count = mp.cpu_count()
+		fileParamsName = "name"
+
+		hyperParamsSet_to_test = hyperParamsSet
+		results = []
+		if (randFlag):
+			hyperParamsSetRandom = []
+			##Jobs are becoming processed here!
+			for trial in range(50):
+				hyperParams = random.choice(hyperParamsSet)
+				hyperParamsSetRandom.append(hyperParams)
+			hyperParamsSet_to_test = hyperParamsSetRandom
+			fileParamsName = "hyperparams_rand_stat.txt"
+		else:
+			fileParamsName = "hyperparams_full_stat.txt"	
+			
+		parNum = len(hyperParamsSet_to_test)
+		poolNum = parNum//cpu_count + int(parNum%cpu_count > 0)
+		start = 0
+		for pool_i in range(1, poolNum + 1):
+			if (pool_i == poolNum):
+				jobsNum = parNum - (poolNum - 1) * cpu_count
+			else:
+				jobsNum = cpu_count
+			pool = mp.Pool(jobsNum)
+			for hyperParams in hyperParamsSet_to_test[start:start + jobsNum]:
 				args = (dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest, hyperParams)
 				result_objects.append(pool.apply_async(tryModel, args=args))
-			results = [r.get() for r in result_objects]
-			pool.close()
-			pool.join()
-
-			fileParams = open("hyperparams_stat.txt", "w+")
+			new_results = [r.get() for r in result_objects]
+			results = results + new_results
 			resultsSorted = sorted(results, reverse = False)
+			fileUpdatedLog = open("hyperparams_current_log_1.txt", "w+") 
 			for result in resultsSorted:
+				print("WRITING TO HYPERPARAMS FILE")
 				index = results.index(result)
-				fileParams.write(str((result, hyperParamsSet[index])) + "\n")
-			fileParams.close()
-				
-		else:
-			results = []
-			for hyperParams in hyperParamsSet:
-				modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest, hyperParams)
-				results.append(modelScore)
-			
-			fileParams = open("hyperparams_stat.txt", "w+")
-			resultsSorted = sorted(results, reverse = False)
-			for result in resultsSorted:
-				index = results.index(result)
-				fileParams.write(str((result, hyperParamsSet[index])) + "\n")
-			fileParams.close()
-
+				fileUpdatedLog.write(str((result, hyperParamsSet_to_test[index])) + "\n")
+			fileUpdatedLog.close()				
+			start += jobsNum
 	else:
 		hyperParams = {'nLayer': 3,
-					'activation': "elu",
-					'nNodes': 222,
+					'activation': "softplus",
+					'nNodes': 200,
 					'dropout': 0.3, 
 					'batchSize': 25, 
-					'nEpoch': 1}
+					'nEpoch': 700}
 		modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest, hyperParams)
 		print("model: ", hyperParams)
 		print("modelScore = ", modelScore)
@@ -155,14 +163,14 @@ def main():
     ##Train model
 	if args.train:
 		tuneFlag = False
-		parallelizeFlag = False
+		randFlag = False
 		if args.tune:
 			tuneFlag = True
-			if args.parallel:
-				parallelizeFlag = True
+			if args.rand:
+				randFlag = True
 		Flags = {'tuneFlag': tuneFlag,
-				'parallelizeFlag': parallelizeFlag
-		}
+				'randFlag': randFlag
+					}
 		trainModel(**Flags)
 
 if __name__ == "__main__":

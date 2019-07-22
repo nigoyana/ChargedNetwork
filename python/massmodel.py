@@ -8,8 +8,8 @@ def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest,
 	model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001), loss='mean_squared_error', metrics=['mean_squared_error'])
 	training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2)
 	model.summary()
-	os.makedirs("models/" + model.title, exist_ok=True)
-	path_to_save = "models/" + model.title + "/" + model.title
+	os.makedirs("models/random_search/" + model.title, exist_ok=True)
+	path_to_save = "models/random_search/" + model.title + "/" + model.title
 	model.save_weights(path_to_save, save_format='tf')
 	##Check mass distribution on test data
 	bkgPrediction = model.predict(bkgTest).flatten()
@@ -46,7 +46,7 @@ class MassModel(tf.keras.Model):
 		ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
 
 		fig.subplots_adjust(wspace=0.3, hspace=0.7)
-		training_name = "models/" + self.title + "/" + "training_" + self.title + ".pdf"
+		training_name = "models/random_search/" + self.title + "/" + "training_" + self.title + ".pdf"
 		fig.savefig(training_name, bbox_inches="tight")
 
 		fig, ax = plt.subplots()
@@ -61,6 +61,6 @@ class MassModel(tf.keras.Model):
 		ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
 
 		fig.subplots_adjust(wspace=0.3, hspace=0.7)
-		mass_name = "models/" + self.title + "/" + "mass" + str(mass) + "_" + self.title + ".pdf"
+		mass_name = "models/random_search/" + self.title + "/" + "mass" + str(mass) + "_" + self.title + ".pdf"
 		fig.savefig(mass_name, bbox_inches="tight")
 
