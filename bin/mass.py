@@ -25,7 +25,7 @@ def labelData(data_files):
 		if mass in dictFiles:
 			dictFiles[mass].append(file_name)
 		else:
-			dictFiles[mass] = [file_name]	
+			dictFiles[mass] = [file_name]
 	return dictFiles
 
 def trainModel(tuneFlag, randFlag):
@@ -52,13 +52,17 @@ def trainModel(tuneFlag, randFlag):
 
 	dictFiles = labelData(data_files)
 
+
     ##Read csv data to numpy
 	
-	dictMassInd = dict()
+	dictMassIndTest = dict()
+	dictMassIndTrain = dict()
 	data, result = [], []
 	dataTest, resultTest = [], []
+	dataTrain, resultTrain = [], []
 	for mass in dictFiles:
-		start_index = len(dataTest)
+		start_index_test = len(dataTest)
+		start_index_train = len(dataTrain)
 		for file_name in dictFiles[mass]:
 			dataFrame = pd.read_csv(file_name, sep=",")
 			data = dataFrame.to_numpy()
@@ -68,18 +72,21 @@ def trainModel(tuneFlag, randFlag):
 				#resultTest = [int(file_name[-11:-8])] * data[trainFrac::, [-1]].shape[0]
 				#dataTrain = data[:trainFrac:, :-12]
 				#resultTrain = [int(file_name[-11:-8])] * data[:trainFrac:, [-1]].shape[0]
-				dataTest, resultTest = data[trainFrac::, :-12], data[trainFrac::, [-1]]
-				dataTrain, resultTrain = data[:trainFrac:, :-12], data[:trainFrac:, [-1]]
+				dataTest, resultTest = data[trainFrac::, :-12], data[trainFrac::, [-1, -9]] ##-5 -9
+				dataTrain, resultTrain = data[:trainFrac:, :-12], data[:trainFrac:, [-1, -9]]
 			else:
 				dataTest = np.append(dataTest, data[trainFrac::, :-12], axis = 0)
-				resultTest = np.append(resultTest, data[trainFrac::, [-1]], axis = 0)
-				#resultTest = np.append(resultTest, [int(file_name[-11:-8])] * data[trainFrac::, [-1]].shape[0])
+				resultTest = np.append(resultTest, data[trainFrac::, [-1, -9]], axis = 0)
+				#resultTest = np.append(resultTest, [int(file_name[-11:-8])]*data[trainFrac::, [-1]].shape[0])
 				dataTrain = np.append(dataTrain, data[:trainFrac:, :-12], axis = 0)
-				resultTrain = np.append(resultTrain, data[:trainFrac:, [-1]], axis = 0)
-				#resultTrain = np.append(resultTrain, [int(file_name[-11:-8])] * data[:trainFrac:, [-1]].shape[0])
-		end_index = len(dataTest)
-		dictMassInd[mass] = (start_index, end_index)
-	
+				resultTrain = np.append(resultTrain, data[:trainFrac:, [-1, -9]], axis = 0)
+				#resultTrain = np.append(resultTrain, [int(file_name[-11:-8])]*data[:trainFrac:, [-1]].shape[0])
+		end_index_test = len(dataTest)
+		dictMassIndTest[mass] = (start_index_test, end_index_test)
+		end_index_train = len(dataTrain)
+		dictMassIndTrain[mass] = (start_index_train, end_index_train)
+
+
 	bkgFrame = pd.read_csv("data/massTraining/e4j/TT+j-1L.csv", sep=",")
 	bkgTest = bkgFrame.to_numpy()[:40000:, :-12]
 
@@ -102,7 +109,7 @@ def trainModel(tuneFlag, randFlag):
 						newDict['nNodes'] = number_of_nodes
 						newDict['dropout'] = 0.3
 						newDict['batchSize'] = batchSize
-						newDict['nEpoch'] = 1
+						newDict['nEpoch'] = 20
 						hyperParamsSet.append(newDict)
 
 		result_objects = []
@@ -132,12 +139,12 @@ def trainModel(tuneFlag, randFlag):
 				jobsNum = cpu_count
 			pool = mp.Pool(jobsNum)
 			for hyperParams in hyperParamsSet_to_test[start:start + jobsNum]:
-				args = (dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest, hyperParams)
+				args = (dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams)
 				result_objects.append(pool.apply_async(tryModel, args=args))
 			new_results = [r.get() for r in result_objects]
 			results = results + new_results
 			resultsSorted = sorted(results, reverse = False)
-			fileUpdatedLog = open("hyperparams_current_log_1.txt", "w+") 
+			fileUpdatedLog = open("hyperparams_current_log_last.txt", "w+") 
 			for result in resultsSorted:
 				print("WRITING TO HYPERPARAMS FILE")
 				index = results.index(result)
@@ -145,18 +152,19 @@ def trainModel(tuneFlag, randFlag):
 			fileUpdatedLog.close()				
 			start += jobsNum
 	else:
-		hyperParams = {'nLayer': 3,
+		hyperParams = {'nLayer': 5,
 					'activation': "softplus",
 					'nNodes': 200,
 					'dropout': 0.3, 
-					'batchSize': 25, 
-					'nEpoch': 700}
-		modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassInd, bkgTest, hyperParams)
+					'batchSize': 100, 
+					'nEpoch': 1}
+		modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams)
 		print("model: ", hyperParams)
 		print("modelScore = ", modelScore)
 
 
 def main():
+
     ##Parser arguments
 	args = parser()
 
