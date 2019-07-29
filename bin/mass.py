@@ -16,6 +16,7 @@ def parser():
     parser.add_argument('--train', action = "store_true", help="Train model on data")
     parser.add_argument('--tune', action = "store_true", help="Tune the hyperparameters. It will be automatically parallelised (if possible)")
     parser.add_argument('--rand', action = "store_true", help="Enable random tuning. It will be automatically parallelised (if possible)")
+    parser.add_argument('--trueH', action = "store_true", help="Use 'true' H mass (not generated) in training and testing")
     return parser.parse_args()
 
 def labelData(data_files):
@@ -28,7 +29,12 @@ def labelData(data_files):
 			dictFiles[mass] = [file_name]
 	return dictFiles
 
-def trainModel(tuneFlag, randFlag):
+def trainModel(tuneFlag, randFlag, trueHFlag):
+
+	masses = [200, 300]
+
+	dataFileTempEle = "data/massTraining/e4j/L4B_{}_100.csv"
+	dataFileTempMu = "data/massTraining/mu4j/L4B_{}_100.csv"
 
 	data_files = [
 			"data/massTraining/e4j/L4B_200_100.csv",
@@ -51,8 +57,21 @@ def trainModel(tuneFlag, randFlag):
 			"data/massTraining/mu4j/L4B_600_100.csv"]
 
 	dictFiles = labelData(data_files)
+	
+	"""
+	dataFrameEle = [pd.read_csv(dataFileTempEle.format(mass), sep=",") for mass in masses]
+	dataFrameMu = [pd.read_csv(dataFileTempMu.format(mass), sep=",") for mass in masses]
 
+	data = pd.concenate(dataFrameEle + dataFrameMu).sample(frac=1).to_numpy()
 
+	trainFrac = int(0.9 * data.shape[0])
+	
+	dataTest = data[trainFrac::, :-12]
+	dataTrain = data[:trainFrac:, :-12]]
+
+	resultTest = data[trainFrac::, [-1]]
+	resultTrain = data[:trainFrac:, [-1]]
+	"""
     ##Read csv data to numpy
 	
 	dictMassIndTest = dict()
@@ -68,19 +87,72 @@ def trainModel(tuneFlag, randFlag):
 			data = dataFrame.to_numpy()
 			trainFrac = int(0.9 * data.shape[0])
 			if (data_files.index(file_name) == 0):
-				#dataTest = data[trainFrac::, :-12]
-				#resultTest = [int(file_name[-11:-8])] * data[trainFrac::, [-1]].shape[0]
-				#dataTrain = data[:trainFrac:, :-12]
-				#resultTrain = [int(file_name[-11:-8])] * data[:trainFrac:, [-1]].shape[0]
-				dataTest, resultTest = data[trainFrac::, :-12], data[trainFrac::, [-1, -9]] ##-5 -9
-				dataTrain, resultTrain = data[:trainFrac:, :-12], data[:trainFrac:, [-1, -9]]
+				dataTest = data[trainFrac::, :-12]
+				dataTrain = data[:trainFrac:, :-12]
+				if (trueHFlag):
+					resultTest = [int(file_name[-11:-8])] * data[trainFrac::, [-1]].shape[0]
+					resultTrain = [int(file_name[-11:-8])] * data[:trainFrac:, [-1]].shape[0]
+				else:
+					m_col = data[trainFrac::, [-1]]
+					px_col = np.array(data[trainFrac::, [-4]] * np.cos(data[trainFrac::, [-3]]))
+					py_col = np.array(data[trainFrac::, [-4]] * np.sin(data[trainFrac::, [-3]]))
+					pz_col = np.array(data[trainFrac::, [-4]] / np.tan(2 * np.arctan(np.exp( - data[trainFrac::, [-2]]))))
+					E_col = np.sqrt(px_col**2 + py_col**2 + pz_col**2 + m_col**2)
+
+					resultTest = np.append(E_col, px_col, axis = 1)
+					resultTest = np.append(resultTest, py_col, axis = 1)
+					resultTest = np.append(resultTest, pz_col, axis = 1)
+
+					#print(resultTest[:10])
+
+					m_col = data[:trainFrac:, [-1]]
+					px_col = np.array(data[:trainFrac:, [-4]] * np.cos(data[:trainFrac:, [-3]]))
+					py_col = np.array(data[:trainFrac:, [-4]] * np.sin(data[:trainFrac:, [-3]]))
+					pz_col = np.array(data[:trainFrac:, [-4]] / np.tan(2 * np.arctan(np.exp( - data[:trainFrac:, [-2]]))))
+					E_col = np.sqrt(px_col**2 + py_col**2 + pz_col**2 + m_col**2)
+
+					resultTrain = np.append(E_col, px_col, axis = 1)
+					resultTrain = np.append(resultTrain, py_col, axis = 1)
+					resultTrain = np.append(resultTrain, pz_col, axis = 1)
+	
+					#print(resultTrain[:10])
+
+					resultTest = data[trainFrac::, [-1, -2, -3, -4]] ##-5 -9
+					resultTrain = data[:trainFrac:, [-1, -2, -3, -4]]
 			else:
 				dataTest = np.append(dataTest, data[trainFrac::, :-12], axis = 0)
-				resultTest = np.append(resultTest, data[trainFrac::, [-1, -9]], axis = 0)
-				#resultTest = np.append(resultTest, [int(file_name[-11:-8])]*data[trainFrac::, [-1]].shape[0])
 				dataTrain = np.append(dataTrain, data[:trainFrac:, :-12], axis = 0)
-				resultTrain = np.append(resultTrain, data[:trainFrac:, [-1, -9]], axis = 0)
-				#resultTrain = np.append(resultTrain, [int(file_name[-11:-8])]*data[:trainFrac:, [-1]].shape[0])
+				if (trueHFlag):
+					resultTest = np.append(resultTest, [int(file_name[-11:-8])]*data[trainFrac::, [-1]].shape[0])
+					resultTrain = np.append(resultTrain, [int(file_name[-11:-8])]*data[:trainFrac:, [-1]].shape[0])
+				else:
+					m_col = data[trainFrac::, [-1]]
+					px_col = np.array(data[trainFrac::, [-4]] * np.cos(data[trainFrac::, [-3]]))
+					py_col = np.array(data[trainFrac::, [-4]] * np.sin(data[trainFrac::, [-3]]))
+					pz_col = np.array(data[trainFrac::, [-4]] / np.tan(2 * np.arctan(np.exp( - data[trainFrac::, [-2]]))))
+					E_col = np.sqrt(px_col**2 + py_col**2 + pz_col**2 + m_col**2)
+
+					resultTest_add = np.append(E_col, px_col, axis = 1)
+					resultTest_add = np.append(resultTest_add, py_col, axis = 1)
+					resultTest_add = np.append(resultTest_add, pz_col, axis = 1)
+
+					m_col = data[:trainFrac:, [-1]]
+					px_col = np.array(data[:trainFrac:, [-4]] * np.cos(data[:trainFrac:, [-3]]))
+					py_col = np.array(data[:trainFrac:, [-4]] * np.sin(data[:trainFrac:, [-3]]))
+					pz_col = np.array(data[:trainFrac:, [-4]] / np.tan(2 * np.arctan(np.exp( - data[:trainFrac:, [-2]]))))
+					E_col = np.sqrt(px_col**2 + py_col**2 + pz_col**2 + m_col**2)
+
+					resultTrain_add = np.append(E_col, px_col, axis = 1)
+					resultTrain_add = np.append(resultTrain_add, py_col, axis = 1)
+					resultTrain_add = np.append(resultTrain_add, pz_col, axis = 1)
+					
+					resultTest = np.append(resultTest, resultTest_add, axis = 0)
+					resultTrain = np.append(resultTrain, resultTrain_add, axis = 0)		
+
+					#resultTest = np.append(resultTest, data[trainFrac::, [-1,  -2, -3, -4]], axis = 0)
+					#resultTrain = np.append(resultTrain, data[:trainFrac:, [-1,  -2, -3, -4]], axis = 0)
+					#print(len(resultTest))	
+					#print(len(resultTrain))			
 		end_index_test = len(dataTest)
 		dictMassIndTest[mass] = (start_index_test, end_index_test)
 		end_index_train = len(dataTrain)
@@ -156,8 +228,8 @@ def trainModel(tuneFlag, randFlag):
 					'activation': "softplus",
 					'nNodes': 200,
 					'dropout': 0.3, 
-					'batchSize': 100, 
-					'nEpoch': 1}
+					'batchSize': 103, 
+					'nEpoch': 200}
 		modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams)
 		print("model: ", hyperParams)
 		print("modelScore = ", modelScore)
@@ -167,17 +239,23 @@ def main():
 
     ##Parser arguments
 	args = parser()
+	tf.compat.v1.enable_eager_execution()
 
+	#print(tf.executing_eagerly())
     ##Train model
 	if args.train:
 		tuneFlag = False
 		randFlag = False
+		trueHFlag = False
 		if args.tune:
 			tuneFlag = True
 			if args.rand:
 				randFlag = True
+		if args.trueH:
+			trueHFlag = True
 		Flags = {'tuneFlag': tuneFlag,
-				'randFlag': randFlag
+				'randFlag': randFlag,
+				'trueHFlag': trueHFlag
 					}
 		trainModel(**Flags)
 
