@@ -26,10 +26,12 @@ def custom_loss_expo(y_true, y_pred):
 	return tf.math.exp(diff_sqrt_div)
 	#return diff
 
-def custom_loss_expo(y_true, y_pred):
-	
+def custom_loss_4vector(y_true, y_pred):
+	massTrueSq = y_true[:, 0]**2 - y_true[:, 1]**2 - y_true[:, 2]**2 - y_true[:, 3]**2
+	massPredSq = y_pred[:, 0]**2 - y_pred[:, 1]**2 - y_pred[:, 2]**2 - y_pred[:, 3]**2
+	return np.sum((massTrueSq - massPredSq)**2)
 
-folder = "4vector/"
+folder = "test/"
 
 def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams):
 	
@@ -97,7 +99,7 @@ def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dic
 
 	callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10)
 	#loss_weights = np.array(getLossWeights(dictMassIndTrain))
-	#model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001), loss='mean_squared_error', metrics=['mean_squared_error']) ##Learning rate -> HyperParams
+	#model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001), loss=custom_loss_4vector, metrics=['mean_squared_error']) ##Learning rate -> HyperParams
 	model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='mean_squared_error', metrics=['mean_squared_error'])
 
 	dictWeights = getLossWeights(dictMassIndTrain)
@@ -120,6 +122,7 @@ def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dic
 	sample_weight = np.array(sample_weight)
 
 	training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2, sample_weight = sample_weight)
+
 	model.summary()
 	os.makedirs("models/" + folder + model.title, exist_ok=True)
 	path_to_save = "models/" + folder + model.title + "/" + model.title

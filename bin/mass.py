@@ -228,8 +228,8 @@ def trainModel(tuneFlag, randFlag, trueHFlag):
 					'activation': "softplus",
 					'nNodes': 200,
 					'dropout': 0.3, 
-					'batchSize': 103, 
-					'nEpoch': 200}
+					'batchSize': 104, 
+					'nEpoch': 100}
 		modelScore = tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams)
 		print("model: ", hyperParams)
 		print("modelScore = ", modelScore)
