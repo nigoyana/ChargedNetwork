@@ -31,9 +31,10 @@ def custom_loss_4vector(y_true, y_pred):
 	massPredSq = y_pred[:, 0]**2 - y_pred[:, 1]**2 - y_pred[:, 2]**2 - y_pred[:, 3]**2
 	return np.sum((massTrueSq - massPredSq)**2)
 
-folder = "test/"
+folder = "test/with_bkg_to_random/"
 
-def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams):
+#def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams):
+def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, hyperParams):
 	
 	nOutput = 4
 
@@ -121,20 +122,21 @@ def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dic
 		sample_weight += [weight] * massEvts
 	sample_weight = np.array(sample_weight)
 
-	training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2, sample_weight = sample_weight)
+	training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2, sample_weight = sample_weight, shuffle=True)
 
 	model.summary()
 	os.makedirs("models/" + folder + model.title, exist_ok=True)
 	path_to_save = "models/" + folder + model.title + "/" + model.title
 	model.save_weights(path_to_save, save_format='tf')
 	##Check mass distribution on test data
-	bkgPrediction = model.predict(bkgTest)
+	bkgPrediction = model.predict(dataTest[dictMassIndTest[0][0]:dictMassIndTest[0][1]])
 	for mass in dictMassIndTest:
 		start = dictMassIndTest[mass][0]
 		end = dictMassIndTest[mass][1]
 		signalPrediction = model.predict(dataTest[start:end])
 		model.plotOutputs(signalPrediction, bkgPrediction, resultTest[start:end], mass)
 		model.plotDerivedMass(signalPrediction, bkgPrediction, resultTest[start:end], mass)
+		model.plotCorrelations(signalPrediction, resultTest[start:end], mass)
 	model.plotTrainingCurve(training)
 	return training.history['val_mean_squared_error'][-1]
 
@@ -218,5 +220,26 @@ class MassModel(tf.keras.Model):
 			fig.savefig(mass_name, bbox_inches="tight")
 			#mass_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" +  outputDict['name'] + ".png"
 			#fig.savefig(mass_name, bbox_inches="tight")
+
+	def plotCorrelations(self, signal, true, mass):
+		for outputNum in range(self.nOutput):
+			fig, ax = plt.subplots()
+			outputDict = self.OutputDescription[outputNum]
+			nBins = 100 #outputDict['bins']
+			ax.hist2d(true[:, outputNum], signal[:, outputNum], bins=nBins)
+
+			outputDict['title_add'] = r"(m$_{gen}(H)$ = " + str(mass) + " GeV)"
+			histTitle = "Correlation plot for " + outputDict['xlabel'] + r"(m$_{gen}(H)$ = " + str(mass) + " GeV)"
+			ax.set_title(histTitle)
+			ax.set_xlabel(outputDict['xlabel'] + " true")
+			ax.set_ylabel(outputDict['xlabel'] + " predicted")
+			#ax.set_xlim(outputDict['xlim'][0], outputDict['xlim'][1])
+			#ax.set_ylim(outputDict['xlim'][0], outputDict['xlim'][1])
+
+			fig.subplots_adjust(wspace=0.3, hspace=0.7)			
+			correlation_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" + outputDict['name'] + "_corr" + ".pdf"	
+			fig.savefig(correlation_name, bbox_inches="tight")
+
+
 			
 
