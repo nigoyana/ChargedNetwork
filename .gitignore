@@ -1,4 +1,6 @@
 *pdf
 anaconda*
 *.csv
+*.pyc
+*__init__*
 *__pycache__*
