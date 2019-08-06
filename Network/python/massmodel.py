@@ -31,14 +31,15 @@ def custom_loss_4vector(y_true, y_pred):
 	massPredSq = y_pred[:, 0]**2 - y_pred[:, 1]**2 - y_pred[:, 2]**2 - y_pred[:, 3]**2
 	return np.sum((massTrueSq - massPredSq)**2)
 
-folder = "test/with_bkg_to_random/"
+folder = "test/conv_inputs/tuning/"
 
 #def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, bkgTest, hyperParams):
-def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, hyperParams):
+def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dictMassIndTest, hyperParams, bkgTest = False):
 	
 	nOutput = 4
 
-	model = MassModel(dataTrain.shape[-1], nOutput, **hyperParams)
+	#model = MassModel(dataTrain.shape[-1], nOutput, **hyperParams)
+	model = MassModel(tuple(dataTrain.shape[1:]), nOutput, **hyperParams)
 
 	model.nOutput = nOutput
 	##Change OutputNames!
@@ -121,32 +122,26 @@ def tryModel(dataTrain, resultTrain, dataTest, resultTest, dictMassIndTrain, dic
 		weight = class_weight_vect[list(classes).index(mass)]
 		sample_weight += [weight] * massEvts
 	sample_weight = np.array(sample_weight)
-
-	training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2, sample_weight = sample_weight, shuffle=True)
-
-	model.summary()
-	os.makedirs("models/" + folder + model.title, exist_ok=True)
-	path_to_save = "models/" + folder + model.title + "/" + model.title
-	model.save_weights(path_to_save, save_format='tf')
-	##Check mass distribution on test data
-	bkgPrediction = model.predict(dataTest[dictMassIndTest[0][0]:dictMassIndTest[0][1]])
-	for mass in dictMassIndTest:
-		start = dictMassIndTest[mass][0]
-		end = dictMassIndTest[mass][1]
-		signalPrediction = model.predict(dataTest[start:end])
-		model.plotOutputs(signalPrediction, bkgPrediction, resultTest[start:end], mass)
-		model.plotDerivedMass(signalPrediction, bkgPrediction, resultTest[start:end], mass)
-		model.plotCorrelations(signalPrediction, resultTest[start:end], mass)
-	model.plotTrainingCurve(training)
-	return training.history['val_mean_squared_error'][-1]
+	try:
+		training = model.fit(dataTrain, resultTrain, epochs=hyperParams['nEpoch'], batch_size=hyperParams['batchSize'], callbacks=[callback], validation_split=0.1, verbose=2, sample_weight = sample_weight, shuffle=True)
+		model.plotResults(dataTest, resultTest, dictMassIndTest, bkgTest, training)
+		return training.history['val_mean_squared_error'][-1]
+	except KeyboardInterrupt:
+		model.plotResults(dataTest, resultTest, dictMassIndTest, bkgTest)
+	#model.plotResults(dataTest, resultTest, dictMassIndTest, bkgTest, training)
+		return "interrupted"
 
 class MassModel(tf.keras.Model):
-	def __init__(self, inputShape, nOutput, nLayer=3, nNodes=100, activation="relu", dropout=0.3, batchSize = 25, nEpoch = 500):
+	def __init__(self, inputShape, nOutput, nLayer=3, nNodes=100, activation="relu", dropout=0.3, batchSize = 25, kernel = (2, 2), nKernels = 16, nEpoch = 500):
 		
-		self.title = "l" + str(nLayer) + "_n" + str(nNodes) + "_" + str(activation) + "_b" + str(batchSize) + "_mu_and_e"
+		self.title = "l" + str(nLayer) + "_n" + str(nNodes) + "_" + str(activation) + "_b" + str(batchSize) + "_k" + str(nKernels) + "_" + str(kernel[0]) + "x" + str(kernel[1]) + "_mu_and_e"
 		
-		inputLayer = tf.keras.layers.Input(shape=(inputShape))
-		x = tf.keras.layers.Dense(nNodes, activation=activation)(inputLayer)
+		inputLayer = tf.keras.layers.Input(shape=(6, 4, 1))
+
+		convLayer = tf.keras.layers.Conv2D(nKernels, kernel, input_shape=(6, 4, 1))(inputLayer)
+		flattenLayer = tf.keras.layers.Flatten()(convLayer)
+
+		x = tf.keras.layers.Dense(nNodes, activation=activation)(flattenLayer)
 
 		for n in range(nLayer-1):
 			x = tf.keras.layers.Dense(nNodes, activation=activation)(x)
@@ -154,6 +149,26 @@ class MassModel(tf.keras.Model):
 		outputLayer = tf.keras.layers.Dense(nOutput)(x)
 
 		tf.keras.Model.__init__(self, inputs=inputLayer, outputs=outputLayer, name="MassModel")
+
+	def plotResults(self, dataTest, resultTest, dictMassIndTest, bkgTest, training=False):
+		self.summary()
+		os.makedirs("models/" + folder + self.title, exist_ok=True)
+		path_to_save = "models/" + folder + self.title + "/" + self.title
+		self.save_weights(path_to_save, save_format='tf')
+		##Check mass distribution on test data
+		if (bkgTest is False):
+			bkgTest = dataTest[dictMassIndTest[0][0]:dictMassIndTest[0][1]]
+		bkgPrediction = self.predict(bkgTest)
+
+		for mass in dictMassIndTest:
+			start = dictMassIndTest[mass][0]
+			end = dictMassIndTest[mass][1]
+			signalPrediction = self.predict(dataTest[start:end])
+			self.plotOutputs(signalPrediction, bkgPrediction, resultTest[start:end], mass)
+			self.plotDerivedMass(signalPrediction, bkgPrediction, resultTest[start:end], mass)
+			#self.plotCorrelations(signalPrediction, resultTest[start:end], mass)
+		if (training):
+			self.plotTrainingCurve(training)
 
 	def plotTrainingCurve(self, training):
 		fig, ax = plt.subplots()
@@ -168,6 +183,7 @@ class MassModel(tf.keras.Model):
 		fig.subplots_adjust(wspace=0.3, hspace=0.7)
 		training_name = "models/" + folder + self.title + "/" + "training_" + self.title + ".pdf"	
 		fig.savefig(training_name, bbox_inches="tight")
+		plt.close(fig)
 
 	def plotDerivedMass(self, signalPrediction, bkgPrediction, true, mass):
 		mHpredict = np.sqrt(signalPrediction[:, 0]**2 - signalPrediction[:, 1]**2 - signalPrediction[:, 2]**2 - signalPrediction[:, 3]**2)
@@ -196,7 +212,8 @@ class MassModel(tf.keras.Model):
 
 		fig.subplots_adjust(wspace=0.3, hspace=0.7)
 		mass_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" + outputDict['name'] + ".pdf"
-		fig.savefig(mass_name, bbox_inches="tight")			
+		fig.savefig(mass_name, bbox_inches="tight")
+		plt.close(fig)		
 
 	def plotOutputs(self, signal, background, true, mass):
 		for outputNum in range(self.nOutput):
@@ -220,6 +237,7 @@ class MassModel(tf.keras.Model):
 			fig.savefig(mass_name, bbox_inches="tight")
 			#mass_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" +  outputDict['name'] + ".png"
 			#fig.savefig(mass_name, bbox_inches="tight")
+			plt.close(fig)
 
 	def plotCorrelations(self, signal, true, mass):
 		for outputNum in range(self.nOutput):
@@ -237,9 +255,9 @@ class MassModel(tf.keras.Model):
 			#ax.set_ylim(outputDict['xlim'][0], outputDict['xlim'][1])
 
 			fig.subplots_adjust(wspace=0.3, hspace=0.7)			
-			correlation_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" + outputDict['name'] + "_corr" + ".pdf"	
+			correlation_name = "models/" + folder + self.title + "/" + "mass" + str(mass) + "_" + self.title + "_" + outputDict['name'] + "_corr" + ".pdf"
 			fig.savefig(correlation_name, bbox_inches="tight")
-
+			plt.close(fig)
 
 			
 
